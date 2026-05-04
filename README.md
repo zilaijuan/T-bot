@@ -126,6 +126,7 @@ DEFAULT_EXPIRY=forever
 - `/done` 生成取件码
 - 取件码包含内容摘要，例如 `P3V1F2-K7M9Q2RA`
 - 摘要数量显示真实值，不压缩、不截断
+- 取回时会尽量使用 Telegram 媒体组发送连续的图片/视频、文件或音频
 - SQLite 存储
 - Telegram `file_id` 存储
 - 管理员统计、查询、删除

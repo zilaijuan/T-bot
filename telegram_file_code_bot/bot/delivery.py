@@ -2,20 +2,29 @@ from __future__ import annotations
 
 from math import ceil
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputMediaAudio,
+    InputMediaDocument,
+    InputMediaPhoto,
+    InputMediaVideo,
+    Message,
+)
+from telegram.error import TelegramError
 
 from telegram_file_code_bot.core.models import Bundle, BundleItem, ContentType
 
 PAGE_CALLBACK_PREFIX = "fcp"
 PAGE_NEIGHBOR_COUNT = 2
+MEDIA_GROUP_MAX_SIZE = 10
 
 
 async def deliver_bundle(message: Message, bundle: Bundle) -> None:
     if bundle.description:
         await message.reply_text(bundle.description)
 
-    for item in bundle.items:
-        await _deliver_item(message, item)
+    await _deliver_items(message, bundle.items)
 
 
 async def deliver_bundle_page(
@@ -34,8 +43,7 @@ async def deliver_bundle_page(
 
     start = (page - 1) * page_size
     end = start + page_size
-    for item in bundle.items[start:end]:
-        await _deliver_item(message, item)
+    await _deliver_items(message, bundle.items[start:end])
 
     await message.reply_text(
         f"第 {page}/{total_pages} 页，共 {len(bundle.items)} 条内容。",
@@ -70,6 +78,71 @@ def build_page_keyboard(*, token: str, current_page: int, total_pages: int) -> I
 
 def _page_button(label: str, token: str, page: int) -> InlineKeyboardButton:
     return InlineKeyboardButton(label, callback_data=f"{PAGE_CALLBACK_PREFIX}:{token}:{page}")
+
+
+async def _deliver_items(message: Message, items: tuple[BundleItem, ...]) -> None:
+    index = 0
+    while index < len(items):
+        item = items[index]
+        media_group_kind = _media_group_kind(item)
+        if media_group_kind is None:
+            await _deliver_item(message, item)
+            index += 1
+            continue
+
+        group_items: list[BundleItem] = []
+        while (
+            index < len(items)
+            and _media_group_kind(items[index]) == media_group_kind
+            and len(group_items) < MEDIA_GROUP_MAX_SIZE
+        ):
+            group_items.append(items[index])
+            index += 1
+
+        if len(group_items) == 1:
+            await _deliver_item(message, group_items[0])
+        else:
+            await _deliver_media_group(message, group_items)
+
+
+async def _deliver_media_group(message: Message, items: list[BundleItem]) -> None:
+    media = [_to_input_media(item) for item in items]
+    if any(item is None for item in media):
+        for item in items:
+            await _deliver_item(message, item)
+        return
+
+    try:
+        await message.reply_media_group(media=[item for item in media if item is not None])
+    except TelegramError:
+        for item in items:
+            await _deliver_item(message, item)
+
+
+def _media_group_kind(item: BundleItem) -> str | None:
+    if not item.telegram_file_id:
+        return None
+    if item.type in {ContentType.PHOTO, ContentType.VIDEO}:
+        return "visual"
+    if item.type == ContentType.DOCUMENT:
+        return "document"
+    if item.type == ContentType.AUDIO:
+        return "audio"
+    return None
+
+
+def _to_input_media(item: BundleItem) -> InputMediaAudio | InputMediaDocument | InputMediaPhoto | InputMediaVideo | None:
+    if not item.telegram_file_id:
+        return None
+    if item.type == ContentType.PHOTO:
+        return InputMediaPhoto(media=item.telegram_file_id, caption=item.caption)
+    if item.type == ContentType.VIDEO:
+        return InputMediaVideo(media=item.telegram_file_id, caption=item.caption)
+    if item.type == ContentType.DOCUMENT:
+        return InputMediaDocument(media=item.telegram_file_id, caption=item.caption)
+    if item.type == ContentType.AUDIO:
+        return InputMediaAudio(media=item.telegram_file_id, caption=item.caption)
+    return None
 
 
 async def _deliver_item(message: Message, item: BundleItem) -> None:
