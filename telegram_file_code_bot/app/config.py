@@ -18,6 +18,7 @@ class Settings:
     max_code_summary_length: int | None
     paginated_redeem_enabled: bool
     redeem_page_size: int
+    code_list_description_length: int
     upload_mode: str
     upload_dir: Path
     admin_user_ids: frozenset[int]
@@ -66,6 +67,11 @@ class Settings:
             redeem_page_size=_parse_positive_int(
                 os.getenv("REDEEM_PAGE_SIZE", "10"),
                 name="REDEEM_PAGE_SIZE",
+                minimum=1,
+            ),
+            code_list_description_length=_parse_positive_int(
+                os.getenv("CODE_LIST_DESCRIPTION_LENGTH", "10"),
+                name="CODE_LIST_DESCRIPTION_LENGTH",
                 minimum=1,
             ),
             upload_mode=os.getenv("UPLOAD_MODE", "telegram_file_id").strip() or "telegram_file_id",

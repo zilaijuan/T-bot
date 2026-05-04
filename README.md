@@ -33,6 +33,7 @@ MAX_ITEMS_PER_BUNDLE=
 MAX_CODE_SUMMARY_LENGTH=
 PAGINATED_REDEEM_ENABLED=false
 REDEEM_PAGE_SIZE=10
+CODE_LIST_DESCRIPTION_LENGTH=10
 
 UPLOAD_MODE=telegram_file_id
 UPLOAD_DIR=data/uploads
@@ -63,6 +64,7 @@ TG_MSG_COLLECTOR_PROXY_URL=
 - `MAX_ITEMS_PER_BUNDLE` 和 `MAX_CODE_SUMMARY_LENGTH` 不配置、为空、`0` 或负数时都表示不限制。
 - `PAGINATED_REDEEM_ENABLED` 控制取回内容时是否分页批量发送，默认关闭。
 - `REDEEM_PAGE_SIZE` 是分页取回时每页发送多少条内容，默认 `10`。
+- `CODE_LIST_DESCRIPTION_LENGTH` 是管理员取件码列表里的描述摘要长度，默认 `10` 个字符。
 - `DEFAULT_EXPIRY` 是取件码默认有效期，支持 `30m`、`12h`、`7d`、`4w`、`forever`。
 - `UPLOAD_MODE` 是取件码 bot 的内容存储模式。当前已实现的值只有 `telegram_file_id`。
 
@@ -144,7 +146,8 @@ DEFAULT_EXPIRY=forever
 /info CODE
 /delete CODE
 /setdesc CODE 描述文字
-/recent
+/recent [数量]
+/codes [页码]
 ```
 
 ## tg_msg_collector

@@ -242,6 +242,19 @@ class SQLiteBundleRepository:
             ).fetchall()
         return [bundle for row in rows if (bundle := self.get_bundle(row["code"])) is not None]
 
+    def count_bundles(self) -> int:
+        with self.lock:
+            row = self.connection.execute("SELECT COUNT(*) AS total FROM bundles").fetchone()
+        return int(row["total"] or 0)
+
+    def list_bundles(self, *, limit: int, offset: int) -> list[Bundle]:
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT code FROM bundles ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return [bundle for row in rows if (bundle := self.get_bundle(row["code"])) is not None]
+
 
 def _bundle_from_rows(bundle_row: sqlite3.Row, item_rows: list[sqlite3.Row]) -> Bundle:
     return Bundle(

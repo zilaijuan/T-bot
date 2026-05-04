@@ -277,6 +277,7 @@ MAX_ITEMS_PER_BUNDLE=
 MAX_CODE_SUMMARY_LENGTH=
 PAGINATED_REDEEM_ENABLED=false
 REDEEM_PAGE_SIZE=10
+CODE_LIST_DESCRIPTION_LENGTH=10
 
 UPLOAD_MODE=telegram_file_id
 UPLOAD_DIR=data/uploads
@@ -383,6 +384,18 @@ REDEEM_PAGE_SIZE=10
 ```
 
 表示每页最多发送 10 条 BundleItem。
+
+### 5.6 `CODE_LIST_DESCRIPTION_LENGTH`
+
+管理员取件码列表中显示的描述摘要长度。
+
+示例：
+
+```env
+CODE_LIST_DESCRIPTION_LENGTH=10
+```
+
+表示 `/codes` 命令返回列表时，描述最多显示 10 个字符，超出后用省略号表示。
 
 ## 6. 存储策略
 

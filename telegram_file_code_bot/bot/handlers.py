@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import html
 import secrets
+from math import ceil
 
-from telegram import Message, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from telegram_file_code_bot.app.config import Settings
@@ -14,6 +16,10 @@ from telegram_file_code_bot.core.models import BundleItemInput, ContentType
 from telegram_file_code_bot.storage.sqlite_repo import SQLiteBundleRepository
 
 PAGE_TOKEN_CACHE_LIMIT = 1000
+DEFAULT_RECENT_LIMIT = 10
+MAX_RECENT_LIMIT = 100
+CODE_LIST_PAGE_SIZE = 10
+CODE_LIST_CALLBACK_PREFIX = "codes"
 
 
 def register_handlers(application: Application) -> None:
@@ -28,6 +34,8 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("delete", delete_handler))
     application.add_handler(CommandHandler("setdesc", setdesc_handler))
     application.add_handler(CommandHandler("recent", recent_handler))
+    application.add_handler(CommandHandler("codes", codes_handler))
+    application.add_handler(CallbackQueryHandler(codes_page_callback_handler, pattern=rf"^{CODE_LIST_CALLBACK_PREFIX}:\d+$"))
     application.add_handler(CallbackQueryHandler(page_callback_handler, pattern=rf"^{PAGE_CALLBACK_PREFIX}:[^:]+:\d+$"))
     application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.AUDIO | filters.VOICE, media_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
@@ -164,12 +172,85 @@ async def setdesc_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def recent_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None or not _is_admin(update, context):
         return
-    bundles = _repository(context).recent_bundles(limit=10)
+
+    limit = DEFAULT_RECENT_LIMIT
+    if context.args:
+        try:
+            limit = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("用法：/recent [数量]")
+            return
+        if limit <= 0:
+            await update.message.reply_text("数量必须大于 0。")
+            return
+        limit = min(limit, MAX_RECENT_LIMIT)
+
+    bundles = _repository(context).recent_bundles(limit=limit)
     if not bundles:
         await update.message.reply_text("暂无内容包。")
         return
-    lines = [f"{bundle.code} | {len(bundle.items)} 条 | {bundle.status.value}" for bundle in bundles]
-    await update.message.reply_text("\n".join(lines))
+    lines = _format_bundle_list_lines(
+        bundles,
+        description_length=_settings(context).code_list_description_length,
+    )
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def codes_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None or not _is_admin(update, context):
+        return
+
+    page = 1
+    if context.args:
+        try:
+            page = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("用法：/codes [页码]")
+            return
+        if page <= 0:
+            await update.message.reply_text("页码必须大于 0。")
+            return
+
+    await _send_codes_page(update.message, context, page)
+
+
+async def codes_page_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or query.message is None:
+        return
+    await query.answer()
+    if query.from_user is None or query.from_user.id not in _settings(context).admin_user_ids:
+        await query.message.reply_text("只有管理员可以查看取件码列表。")
+        return
+
+    parts = query.data.split(":") if query.data else []
+    if len(parts) != 2:
+        return
+    try:
+        page = int(parts[1])
+    except ValueError:
+        return
+
+    await _send_codes_page(query.message, context, page)
+
+
+async def _send_codes_page(message: Message, context: ContextTypes.DEFAULT_TYPE, page: int) -> None:
+    repository = _repository(context)
+    total = repository.count_bundles()
+    if total == 0:
+        await message.reply_text("暂无内容包。")
+        return
+
+    total_pages = max(1, ceil(total / CODE_LIST_PAGE_SIZE))
+    page = min(max(page, 1), total_pages)
+    bundles = repository.list_bundles(limit=CODE_LIST_PAGE_SIZE, offset=(page - 1) * CODE_LIST_PAGE_SIZE)
+    lines = [f"取件码列表 第 {page}/{total_pages} 页，共 {total} 个"]
+    lines.extend(_format_bundle_list_lines(bundles, description_length=_settings(context).code_list_description_length))
+    await message.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        reply_markup=_build_codes_page_keyboard(current_page=page, total_pages=total_pages),
+    )
 
 
 async def page_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -355,6 +436,52 @@ def _remember_page_token(context: ContextTypes.DEFAULT_TYPE, code: str) -> str:
             cache[token] = code
             return token
     raise RuntimeError("无法创建分页会话，请稍后重试。")
+
+
+def _format_bundle_list_lines(bundles, *, description_length: int) -> list[str]:
+    lines = []
+    for bundle in bundles:
+        description = _description_preview(bundle.description, description_length)
+        lines.append(
+            f"<code>{html.escape(bundle.code)}</code> | {len(bundle.items)} 条 | "
+            f"{html.escape(bundle.status.value)} | {html.escape(description)}"
+        )
+    return lines
+
+
+def _description_preview(description: str | None, length: int) -> str:
+    if not description:
+        return "无描述"
+    stripped = description.strip()
+    if len(stripped) <= length:
+        return stripped
+    return stripped[:length]
+
+
+def _build_codes_page_keyboard(*, current_page: int, total_pages: int) -> InlineKeyboardMarkup | None:
+    if total_pages <= 1:
+        return None
+
+    rows: list[list[InlineKeyboardButton]] = []
+    nav_row: list[InlineKeyboardButton] = []
+    if current_page > 1:
+        nav_row.append(_codes_page_button("上一页", current_page - 1))
+    if current_page < total_pages:
+        nav_row.append(_codes_page_button("下一页", current_page + 1))
+    if nav_row:
+        rows.append(nav_row)
+
+    start = max(1, current_page - 2)
+    end = min(total_pages, current_page + 2)
+    rows.append([
+        _codes_page_button(f"·{page}·" if page == current_page else str(page), page)
+        for page in range(start, end + 1)
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+def _codes_page_button(label: str, page: int) -> InlineKeyboardButton:
+    return InlineKeyboardButton(label, callback_data=f"{CODE_LIST_CALLBACK_PREFIX}:{page}")
 
 
 def _owner_name(update: Update) -> str | None:

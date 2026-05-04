@@ -27,7 +27,8 @@ async def post_init(application: Application) -> None:
         BotCommand("setdesc", "更新指定取件码的描述"),
         BotCommand("info", "管理员查看取件码信息"),
         BotCommand("delete", "管理员删除取件码"),
-        BotCommand("recent", "管理员查看最近内容包"),
+        BotCommand("recent", "管理员查看最近内容包，可带数量"),
+        BotCommand("codes", "管理员分页查看所有取件码"),
         BotCommand("stats", "管理员查看统计信息"),
     ]
     await application.bot.set_my_commands(commands)
