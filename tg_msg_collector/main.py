@@ -5,43 +5,62 @@ import logging
 import math
 import html
 import hashlib
+from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo, BotCommand
 from telegram.request import HTTPXRequest
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-# 日志配置
-file_handler = RotatingFileHandler(
-    '/app/data/app.log',
-    maxBytes=10 * 1024 * 1024,
-    backupCount=3,
-    encoding='utf-8'
+
+def _sqlite_path_from_url(database_url):
+    prefix = "sqlite:///"
+    if not database_url.startswith(prefix):
+        raise RuntimeError("tg_msg_collector only supports sqlite:/// DATABASE_URL.")
+    raw_path = database_url[len(prefix):]
+    if not raw_path:
+        raise RuntimeError("DATABASE_URL must include a SQLite database path.")
+    return raw_path
+
+
+DATA_DIR = Path(os.getenv("TG_MSG_COLLECTOR_DATA_DIR", os.getenv("DATA_DIR", "data"))).expanduser()
+LOG_PATH = Path(os.getenv("TG_MSG_COLLECTOR_LOG_PATH", str(DATA_DIR / "tg_msg_collector.log"))).expanduser()
+DB_PATH = os.getenv("TG_MSG_COLLECTOR_DATABASE_PATH", "").strip() or _sqlite_path_from_url(
+    os.getenv("DATABASE_URL", "sqlite:///data/bots.db")
 )
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-
-# 创建控制台处理器
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-
-# 获取根日志记录器
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
-# 清除现有的处理器，避免重复
-for handler in root_logger.handlers[:]:
-    root_logger.removeHandler(handler)
-root_logger.addHandler(file_handler)
-root_logger.addHandler(console_handler)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-ALLOWED_GROUP_IDS = os.getenv('ALLOWED_GROUP_IDS', '').split(',')
-PROXY_URL = os.getenv('PROXY_URL')  # 获取代理地址
+BOT_TOKEN = (
+    os.getenv("TG_MSG_COLLECTOR_BOT_TOKEN", "").strip()
+    or os.getenv("MSG_COLLECTOR_BOT_TOKEN", "").strip()
+    or os.getenv("BOT_TOKEN", "").strip()
+)
+ALLOWED_GROUP_IDS = [group_id.strip() for group_id in os.getenv('TG_MSG_COLLECTOR_ALLOWED_GROUP_IDS', os.getenv('ALLOWED_GROUP_IDS', '')).split(',') if group_id.strip()]
+PROXY_URL = os.getenv('TG_MSG_COLLECTOR_PROXY_URL', os.getenv('PROXY_URL'))  # 获取代理地址
 
 
-DB_PATH = '/app/data/bot_telegram_data.db'
+def configure_logging():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    file_handler = RotatingFileHandler(
+        LOG_PATH,
+        maxBytes=10 * 1024 * 1024,
+        backupCount=3,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
+    logger = logging.getLogger("tg_msg_collector")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    logger.propagate = True
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 PAGE_SIZE = 10 
 search_cache = {}
 
@@ -70,6 +89,7 @@ def prefixed_media_id(content_type, value):
     return f"{content_type}_{value}" if value else None
 
 def init_db():
+    Path(DB_PATH).expanduser().parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute('''
         CREATE TABLE IF NOT EXISTS bot_contents (
@@ -579,25 +599,22 @@ async def handle_click_group(update: Update, context: ContextTypes.DEFAULT_TYPE)
     db_id = cmd_text.split('_', 1)[1]
     await send_media_group_by_db_id(update.message, db_id)
     
-if __name__ == '__main__':
+def build_application():
+    if not BOT_TOKEN:
+        raise RuntimeError("Missing TG_MSG_COLLECTOR_BOT_TOKEN. Create a .env file first.")
+
     init_db()
-    # 使用 post_init 来初始化菜单
     builder = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init)
     if PROXY_URL:
         logging.info(f"检测到代理配置: {PROXY_URL}")
-        # 对于 python-telegram-bot v20.x+，直接在 builder 中传入即可
         builder.proxy(PROXY_URL)
         builder.get_updates_proxy(PROXY_URL)
 
-        # proxy_settings = HTTPXRequest(proxy_url=PROXY_URL)
-        # builder.request(proxy_settings)       
     app = builder.build()
 
-    # 将这个监控放在最前面，且不加任何权限过滤
     app.add_handler(MessageHandler(filters.ALL, debug_monitor), group=-1)
 
     app.add_handler(CommandHandler("start", start))
-    # app.add_handler(CommandHandler("list", list_msgs))
     app.add_handler(CommandHandler("list", list_media))
     app.add_handler(CommandHandler("search", search_msgs))
     app.add_handler(CommandHandler("get", get_msg))
@@ -609,4 +626,13 @@ if __name__ == '__main__':
     # 注册回调处理器
     app.add_handler(CallbackQueryHandler(button_callback_handler, pattern=r'^(get|group)_.+'))
     app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), handle_save))
-    app.run_polling()
+    return app
+
+
+def run():
+    configure_logging()
+    build_application().run_polling()
+
+
+if __name__ == '__main__':
+    run()

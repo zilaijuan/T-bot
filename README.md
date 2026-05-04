@@ -1,67 +1,135 @@
-# Telegram File Code Bot
+# Telegram Bots
 
-Telegram bot and web uploader for sharing files by pickup code.
+这个项目现在通过根目录 [app.py](app.py) 同时启动两个 Telegram bot：
 
-## Features
+- `telegram_file_code_bot`：基于取件码的内容暂存与取回机器人
+- `tg_msg_collector`：群组消息采集与检索机器人
 
-- Single file upload from Telegram: send a file, get a code back
-- Multi-file bundle: one code can point to multiple files
-- Expiring codes and permanent codes
-- Admin statistics command
-- Built-in web upload page
-- Deep link support: `https://t.me/<bot_username>?start=<code>`
-- SQLite storage
+`telegram_file_code_bot` 的详细设计见 [telegram_file_code_bot/DESIGN.md](telegram_file_code_bot/DESIGN.md)。
 
-## Commands
+## 启动方式
 
-- `/start`
-- `/help`
-- `/new 7d`
-- `/new forever`
-- `/done`
-- `/cancel`
-- `/stats`
+根目录 `app.py` 是统一入口：
 
-## Upload Flow
-
-### Telegram single file
-
-1. Send a photo, video, or document to the bot
-2. The bot saves it and returns a pickup code
-3. Anyone can send the code to the bot to receive the file back
-
-### Telegram multi-file bundle
-
-1. Send `/new 7d` or `/new forever`
-2. Send multiple files
-3. Send `/done`
-4. The bot returns one code for the whole bundle
-
-### Web upload
-
-1. Open the web page
-2. Upload multiple files
-3. Set expiry like `30m`, `12h`, `7d`, `4w`, or `forever`
-4. Submit and get one shared code
-
-## Environment
-
-Create a `.env` file:
-
-```env
-BOT_TOKEN=123456:replace-with-your-bot-token
-DATABASE_PATH=data/bot.db
-UPLOAD_DIR=data/uploads
-CODE_LENGTH=8
-DEFAULT_EXPIRY=forever
-ADMIN_USER_IDS=123456789,987654321
-WEB_ENABLED=true
-WEB_HOST=127.0.0.1
-WEB_PORT=8080
-PUBLIC_BASE_URL=
+```bash
+python app.py
 ```
 
-## Install
+它会构建两个独立的 `python-telegram-bot` Application，并在同一个进程里启动两个 polling bot。
+
+## 环境变量
+
+创建 `.env`：
+
+```env
+# telegram_file_code_bot
+TELEGRAM_FILE_CODE_BOT_TOKEN=123456:replace-with-your-file-code-bot-token
+DATABASE_URL=sqlite:///data/bots.db
+
+DEFAULT_EXPIRY=7d
+CODE_RANDOM_LENGTH=8
+
+MAX_ITEMS_PER_BUNDLE=
+MAX_CODE_SUMMARY_LENGTH=
+
+UPLOAD_MODE=telegram_file_id
+UPLOAD_DIR=data/uploads
+
+ADMIN_USER_IDS=123456789,987654321
+ALLOW_PUBLIC_UPLOAD=true
+ALLOW_PUBLIC_REDEEM=true
+
+WEB_ENABLED=false
+PUBLIC_BASE_URL=
+
+# tg_msg_collector
+TG_MSG_COLLECTOR_BOT_TOKEN=123456:replace-with-your-message-collector-bot-token
+TG_MSG_COLLECTOR_ALLOWED_GROUP_IDS=-1001234567890,-1009876543210
+TG_MSG_COLLECTOR_DATABASE_PATH=
+TG_MSG_COLLECTOR_DATA_DIR=data
+TG_MSG_COLLECTOR_LOG_PATH=data/tg_msg_collector.log
+TG_MSG_COLLECTOR_PROXY_URL=
+```
+
+说明：
+
+- 两个 bot 必须使用不同 token。
+- `TELEGRAM_FILE_CODE_BOT_TOKEN` 是取件码 bot 的 token。
+- `TG_MSG_COLLECTOR_BOT_TOKEN` 是消息采集 bot 的 token。
+- 两个 bot 默认共用 `DATABASE_URL` 指向的 SQLite 文件。
+- `TG_MSG_COLLECTOR_DATABASE_PATH` 留空时，采集 bot 会使用 `DATABASE_URL` 中的 SQLite 文件；只有需要单独数据库时才填写。
+- `MAX_ITEMS_PER_BUNDLE` 和 `MAX_CODE_SUMMARY_LENGTH` 不配置、为空、`0` 或负数时都表示不限制。
+- `DEFAULT_EXPIRY` 是取件码默认有效期，支持 `30m`、`12h`、`7d`、`4w`、`forever`。
+
+`DEFAULT_EXPIRY` 格式：
+
+```text
+m = 分钟
+h = 小时
+d = 天
+w = 周
+forever = 永久有效
+```
+
+示例：
+
+```env
+DEFAULT_EXPIRY=30m
+DEFAULT_EXPIRY=12h
+DEFAULT_EXPIRY=7d
+DEFAULT_EXPIRY=4w
+DEFAULT_EXPIRY=forever
+```
+
+## telegram_file_code_bot
+
+功能：
+
+- 自动草稿：直接发送文字、图片、视频或文件即可开始
+- `/desc` 设置 Bundle 描述
+- `/done` 生成取件码
+- 取件码包含内容摘要，例如 `P3V1F2-K7M9Q2RA`
+- 摘要数量显示真实值，不压缩、不截断
+- SQLite 存储
+- Telegram `file_id` 存储
+- 管理员统计、查询、删除
+
+常用命令：
+
+```text
+/start
+/help
+/new [expiry]
+/desc 描述文字
+/done
+/cancel
+/stats
+/info CODE
+/delete CODE
+/recent
+```
+
+## tg_msg_collector
+
+功能：
+
+- 保存白名单群组中的文字和多媒体消息
+- 列出最近保存内容
+- 按关键词搜索
+- 按 ID 回显单条消息
+- 按 ID 回显相册/媒体组
+
+常用命令：
+
+```text
+/start
+/list [page]
+/search 关键词 [page]
+/get ID
+/msg_group ID
+```
+
+## 安装
 
 ```bash
 python -m venv .venv
@@ -69,45 +137,10 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Run
-
-```bash
-python app.py
-```
-
-## Docker Deploy
-
-1. Create `.env` from `.env.example`
-2. Fill at least `BOT_TOKEN`
-3. Start the container:
+## Docker
 
 ```bash
 docker compose up -d --build
-```
-
-4. Check logs:
-
-```bash
 docker compose logs -f
-```
-
-5. Stop:
-
-```bash
 docker compose down
 ```
-
-### Docker Notes
-
-- The bot and web uploader run in the same container
-- Web uploader is exposed on `http://localhost:${WEB_PORT}`
-- Data is persisted to `./data`
-- In Docker, `WEB_HOST` is forced to `0.0.0.0`
-- If you use a public domain, set `PUBLIC_BASE_URL`
-
-## Notes
-
-- Telegram-uploaded files are reused by `file_id`
-- Web-uploaded files are stored under `UPLOAD_DIR`
-- Expired bundles stay in the database but cannot be redeemed
-- The current runtime uses polling for the bot and a built-in Flask web server

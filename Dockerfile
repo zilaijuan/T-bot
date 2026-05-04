@@ -12,9 +12,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY app.py /app/app.py
 COPY telegram_file_code_bot /app/telegram_file_code_bot
+COPY tg_msg_collector /app/tg_msg_collector
 
 RUN mkdir -p /app/data/uploads
-
-EXPOSE 8080
 
 CMD ["python", "app.py"]

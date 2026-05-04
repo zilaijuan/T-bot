@@ -267,8 +267,8 @@ ABCDEFGHJKLMNPQRSTUVWXYZ23456789
 建议 `.env` 支持：
 
 ```env
-BOT_TOKEN=
-DATABASE_URL=sqlite:///data/bot.db
+TELEGRAM_FILE_CODE_BOT_TOKEN=
+DATABASE_URL=sqlite:///data/bots.db
 
 DEFAULT_EXPIRY=7d
 CODE_RANDOM_LENGTH=8
@@ -287,7 +287,31 @@ WEB_ENABLED=false
 PUBLIC_BASE_URL=
 ```
 
-### 5.1 `MAX_ITEMS_PER_BUNDLE`
+### 5.1 `DEFAULT_EXPIRY`
+
+`DEFAULT_EXPIRY` 是取件码的默认有效期。当用户直接发送内容，或发送 `/new` 但没有指定有效期时，系统使用该配置。
+
+支持格式：
+
+```text
+30m      30 分钟
+12h      12 小时
+7d       7 天
+4w       4 周
+forever  永久有效
+```
+
+其中：
+
+```text
+m = 分钟
+h = 小时
+d = 天
+w = 周
+forever = 永久有效
+```
+
+### 5.2 `MAX_ITEMS_PER_BUNDLE`
 
 限制单个 Bundle/Draft 中最多允许多少个 item。
 
@@ -307,7 +331,7 @@ MAX_ITEMS_PER_BUNDLE=500
 
 表示一个 Bundle 最多允许 500 个 item。
 
-### 5.2 `MAX_CODE_SUMMARY_LENGTH`
+### 5.3 `MAX_CODE_SUMMARY_LENGTH`
 
 限制取件码中 `SUMMARY` 部分的最大字符数。
 
