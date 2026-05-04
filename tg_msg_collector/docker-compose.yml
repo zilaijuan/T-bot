@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  tg_bot:
+    build: .
+    container_name: tg_msg_collector
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
