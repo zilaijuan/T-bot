@@ -9,7 +9,7 @@ from telegram_file_code_bot.core.models import BundleItemInput, ContentType
 
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-CODE_PATTERN = re.compile(r"^[A-Z]\d+(?:[A-Z]\d+)*-[A-Z2-9]+$")
+CODE_FIND_PATTERN = re.compile(r"\b[A-Z]\d+(?:[A-Z]\d+)*-[A-Z2-9]+\b", re.IGNORECASE)
 
 
 class CodeService:
@@ -55,5 +55,12 @@ def normalize_code(raw_code: str) -> str:
     return raw_code.strip().upper().replace(" ", "").replace("_", "-")
 
 
-def looks_like_code(raw_text: str) -> bool:
-    return CODE_PATTERN.match(normalize_code(raw_text)) is not None
+def extract_codes(raw_text: str) -> list[str]:
+    codes: list[str] = []
+    seen: set[str] = set()
+    for match in CODE_FIND_PATTERN.finditer(raw_text):
+        code = normalize_code(match.group(0))
+        if code not in seen:
+            seen.add(code)
+            codes.append(code)
+    return codes

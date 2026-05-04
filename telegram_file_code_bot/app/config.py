@@ -16,6 +16,8 @@ class Settings:
     code_random_length: int
     max_items_per_bundle: int | None
     max_code_summary_length: int | None
+    paginated_redeem_enabled: bool
+    redeem_page_size: int
     upload_mode: str
     upload_dir: Path
     admin_user_ids: frozenset[int]
@@ -60,6 +62,12 @@ class Settings:
             code_random_length=code_random_length,
             max_items_per_bundle=_parse_optional_limit(os.getenv("MAX_ITEMS_PER_BUNDLE")),
             max_code_summary_length=_parse_optional_limit(os.getenv("MAX_CODE_SUMMARY_LENGTH")),
+            paginated_redeem_enabled=_parse_bool(os.getenv("PAGINATED_REDEEM_ENABLED"), default=False),
+            redeem_page_size=_parse_positive_int(
+                os.getenv("REDEEM_PAGE_SIZE", "10"),
+                name="REDEEM_PAGE_SIZE",
+                minimum=1,
+            ),
             upload_mode=os.getenv("UPLOAD_MODE", "telegram_file_id").strip() or "telegram_file_id",
             upload_dir=upload_dir,
             admin_user_ids=_parse_admin_user_ids(os.getenv("ADMIN_USER_IDS", "")),

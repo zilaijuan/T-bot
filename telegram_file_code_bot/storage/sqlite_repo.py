@@ -196,6 +196,15 @@ class SQLiteBundleRepository:
             self.connection.commit()
             return cursor.rowcount > 0
 
+    def update_description(self, code: str, description: str | None) -> bool:
+        with self.lock:
+            cursor = self.connection.execute(
+                "UPDATE bundles SET description = ? WHERE code = ?",
+                (description, code),
+            )
+            self.connection.commit()
+            return cursor.rowcount > 0
+
     def get_admin_stats(self) -> AdminStats:
         now = datetime.now(timezone.utc)
         day_ago = now - timedelta(days=1)

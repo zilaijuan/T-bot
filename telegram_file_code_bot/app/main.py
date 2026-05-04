@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from telegram import BotCommand
 from telegram.ext import Application
 
 from telegram_file_code_bot.app.config import Settings
@@ -16,6 +17,20 @@ LOGGER = logging.getLogger(__name__)
 
 
 async def post_init(application: Application) -> None:
+    commands = [
+        BotCommand("start", "查看使用说明或通过取件码取回内容"),
+        BotCommand("help", "查看帮助"),
+        BotCommand("new", "开始新的内容包，可带有效期"),
+        BotCommand("desc", "设置当前内容包描述"),
+        BotCommand("done", "生成取件码"),
+        BotCommand("cancel", "放弃当前内容包"),
+        BotCommand("setdesc", "更新指定取件码的描述"),
+        BotCommand("info", "管理员查看取件码信息"),
+        BotCommand("delete", "管理员删除取件码"),
+        BotCommand("recent", "管理员查看最近内容包"),
+        BotCommand("stats", "管理员查看统计信息"),
+    ]
+    await application.bot.set_my_commands(commands)
     me = await application.bot.get_me()
     LOGGER.info("Bot started as @%s", me.username)
 

@@ -275,6 +275,8 @@ CODE_RANDOM_LENGTH=8
 
 MAX_ITEMS_PER_BUNDLE=
 MAX_CODE_SUMMARY_LENGTH=
+PAGINATED_REDEEM_ENABLED=false
+REDEEM_PAGE_SIZE=10
 
 UPLOAD_MODE=telegram_file_id
 UPLOAD_DIR=data/uploads
@@ -352,6 +354,35 @@ MAX_CODE_SUMMARY_LENGTH=64
 ```
 
 如果真实摘要超过 64 个字符，机器人提示用户减少内容数量，或联系管理员调整配置。
+
+### 5.4 `PAGINATED_REDEEM_ENABLED`
+
+控制使用取件码取回内容时是否按页批量发送。
+
+规则：
+
+- `false`：默认值，保持原行为，一次性发送全部内容。
+- `true`：当内容数量超过 `REDEEM_PAGE_SIZE` 时，分页发送。
+
+分页模式下，机器人先发送第一页内容，然后发送分页按钮。按钮包括：
+
+- 上一页
+- 下一页
+- 当前页附近的页码
+
+用户点击按钮时，机器人发送对应页的内容。
+
+### 5.5 `REDEEM_PAGE_SIZE`
+
+分页取回时每页发送的内容条数。
+
+示例：
+
+```env
+REDEEM_PAGE_SIZE=10
+```
+
+表示每页最多发送 10 条 BundleItem。
 
 ## 6. 存储策略
 

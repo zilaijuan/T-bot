@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import secrets
+
 from telegram import Message, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from telegram_file_code_bot.app.config import Settings
-from telegram_file_code_bot.bot.delivery import deliver_bundle
+from telegram_file_code_bot.bot.delivery import PAGE_CALLBACK_PREFIX, deliver_bundle, deliver_bundle_page
 from telegram_file_code_bot.bot.responses import bundle_created_text, bundle_info_text, draft_summary, start_text, stats_text
 from telegram_file_code_bot.core.bundle_service import BundleService
-from telegram_file_code_bot.core.code_service import looks_like_code, normalize_code
+from telegram_file_code_bot.core.code_service import extract_codes, normalize_code
 from telegram_file_code_bot.core.models import BundleItemInput, ContentType
 from telegram_file_code_bot.storage.sqlite_repo import SQLiteBundleRepository
+
+PAGE_TOKEN_CACHE_LIMIT = 1000
 
 
 def register_handlers(application: Application) -> None:
@@ -22,7 +26,9 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("stats", stats_handler))
     application.add_handler(CommandHandler("info", info_handler))
     application.add_handler(CommandHandler("delete", delete_handler))
+    application.add_handler(CommandHandler("setdesc", setdesc_handler))
     application.add_handler(CommandHandler("recent", recent_handler))
+    application.add_handler(CallbackQueryHandler(page_callback_handler, pattern=rf"^{PAGE_CALLBACK_PREFIX}:[^:]+:\d+$"))
     application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.AUDIO | filters.VOICE, media_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
@@ -91,7 +97,7 @@ async def done_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except ValueError as exc:
         await update.message.reply_text(str(exc))
         return
-    await update.message.reply_text(bundle_created_text(bundle))
+    await update.message.reply_text(bundle_created_text(bundle), parse_mode="HTML")
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -133,6 +139,28 @@ async def delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("已删除。" if deleted else "没有找到可删除的取件码。")
 
 
+async def setdesc_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None or update.effective_user is None:
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("用法：/setdesc CODE 描述文字")
+        return
+
+    code = normalize_code(context.args[0])
+    description = " ".join(context.args[1:]).strip() or None
+    repository = _repository(context)
+    bundle = repository.get_bundle(code)
+    if bundle is None:
+        await update.message.reply_text("没有找到这个取件码。")
+        return
+    if bundle.owner_user_id != update.effective_user.id and not _is_admin(update, context):
+        await update.message.reply_text("只有创建者或管理员可以修改这个取件码的描述。")
+        return
+
+    repository.update_description(code, description)
+    await update.message.reply_text("描述已更新。")
+
+
 async def recent_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None or not _is_admin(update, context):
         return
@@ -142,6 +170,44 @@ async def recent_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     lines = [f"{bundle.code} | {len(bundle.items)} 条 | {bundle.status.value}" for bundle in bundles]
     await update.message.reply_text("\n".join(lines))
+
+
+async def page_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None or query.message is None:
+        return
+    await query.answer()
+    if not _can_redeem_user(query.from_user.id if query.from_user else None, context):
+        await query.message.reply_text("当前机器人不允许公开取回内容。")
+        return
+
+    parts = query.data.split(":") if query.data else []
+    if len(parts) != 3:
+        return
+    _, token, raw_page = parts
+    code = _page_token_cache(context).get(token)
+    if code is None:
+        await query.message.reply_text("分页按钮已失效，请重新发送取件码。")
+        return
+
+    try:
+        page = int(raw_page)
+    except ValueError:
+        return
+
+    try:
+        bundle = _bundle_service(context).get_redeemable_bundle(code)
+    except ValueError as exc:
+        await query.message.reply_text(str(exc))
+        return
+
+    await deliver_bundle_page(
+        query.message,
+        bundle,
+        page=page,
+        page_size=_settings(context).redeem_page_size,
+        token=token,
+    )
 
 
 async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -155,7 +221,7 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if item is None:
         return
     try:
-        draft = _bundle_service(context).add_item(
+        _bundle_service(context).add_item(
             user_id=update.effective_user.id,
             owner_name=_owner_name(update),
             item=item,
@@ -163,7 +229,6 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except ValueError as exc:
         await update.message.reply_text(str(exc))
         return
-    await update.message.reply_text("已加入当前内容包。\n" + draft_summary(draft) + "\n继续发送内容，或发送 /done 生成取件码。")
 
 
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -172,8 +237,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     text = update.message.text.strip()
     service = _bundle_service(context)
-    if not service.has_draft(update.effective_user.id) and looks_like_code(text):
-        await redeem_code(update.message, context, text)
+    codes = extract_codes(text)
+    if not service.has_draft(update.effective_user.id) and codes:
+        for code in codes:
+            await redeem_code(update.message, context, code)
         return
 
     if not _can_upload(update, context):
@@ -182,11 +249,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     item = BundleItemInput(type=ContentType.TEXT, text=text)
     try:
-        draft = service.add_item(user_id=update.effective_user.id, owner_name=_owner_name(update), item=item)
+        service.add_item(user_id=update.effective_user.id, owner_name=_owner_name(update), item=item)
     except ValueError as exc:
         await update.message.reply_text(str(exc))
         return
-    await update.message.reply_text("文字已加入当前内容包。\n" + draft_summary(draft) + "\n继续发送内容，或发送 /done 生成取件码。")
 
 
 async def redeem_code(message: Message, context: ContextTypes.DEFAULT_TYPE, raw_code: str) -> None:
@@ -201,7 +267,18 @@ async def redeem_code(message: Message, context: ContextTypes.DEFAULT_TYPE, raw_
         await message.reply_text(str(exc))
         return
 
-    await deliver_bundle(message, bundle)
+    settings = _settings(context)
+    if settings.paginated_redeem_enabled and len(bundle.items) > settings.redeem_page_size:
+        token = _remember_page_token(context, bundle.code)
+        await deliver_bundle_page(
+            message,
+            bundle,
+            page=1,
+            page_size=settings.redeem_page_size,
+            token=token,
+        )
+    else:
+        await deliver_bundle(message, bundle)
     _bundle_service(context).record_download(bundle.code)
 
 
@@ -264,6 +341,22 @@ def _bundle_service(context: ContextTypes.DEFAULT_TYPE) -> BundleService:
     return context.application.bot_data["bundle_service"]
 
 
+def _page_token_cache(context: ContextTypes.DEFAULT_TYPE) -> dict[str, str]:
+    return context.application.bot_data.setdefault("page_token_cache", {})
+
+
+def _remember_page_token(context: ContextTypes.DEFAULT_TYPE, code: str) -> str:
+    cache = _page_token_cache(context)
+    if len(cache) >= PAGE_TOKEN_CACHE_LIMIT:
+        cache.pop(next(iter(cache)))
+    for _ in range(20):
+        token = secrets.token_urlsafe(6)
+        if token not in cache:
+            cache[token] = code
+            return token
+    raise RuntimeError("无法创建分页会话，请稍后重试。")
+
+
 def _owner_name(update: Update) -> str | None:
     if update.effective_user is None:
         return None
@@ -281,7 +374,11 @@ def _can_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 
 def _can_redeem(message: Message, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    return _can_redeem_user(message.from_user.id if message.from_user else None, context)
+
+
+def _can_redeem_user(user_id: int | None, context: ContextTypes.DEFAULT_TYPE) -> bool:
     settings = _settings(context)
     if settings.allow_public_redeem:
         return True
-    return message.from_user is not None and message.from_user.id in settings.admin_user_ids
+    return user_id is not None and user_id in settings.admin_user_ids

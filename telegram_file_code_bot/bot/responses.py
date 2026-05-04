@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 from telegram_file_code_bot.core.models import AdminStats, Bundle, DraftBundle
 from telegram_file_code_bot.core.policy import format_expiry
 
@@ -12,7 +14,8 @@ def start_text() -> str:
         "/desc 描述文字 - 设置内容包描述\n"
         "/new 7d - 显式开始一个 7 天有效的内容包\n"
         "/done - 生成取件码\n"
-        "/cancel - 放弃当前内容包"
+        "/cancel - 放弃当前内容包\n"
+        "/setdesc 取件码 描述文字 - 更新已生成取件码的描述"
     )
 
 
@@ -22,10 +25,10 @@ def draft_summary(draft: DraftBundle) -> str:
 
 
 def bundle_created_text(bundle: Bundle) -> str:
-    description = f"\n描述：{bundle.description}" if bundle.description else ""
+    description = f"\n描述：{html.escape(bundle.description)}" if bundle.description else ""
     return (
         "内容包已生成。\n"
-        f"取件码：{bundle.code}\n"
+        f"取件码：<code>{html.escape(bundle.code)}</code>\n"
         f"内容数量：{len(bundle.items)}\n"
         f"有效期：{format_expiry(bundle.expires_at)}"
         f"{description}\n\n"
