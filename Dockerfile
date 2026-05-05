@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app.py /app/app.py
+COPY backup_bot /app/backup_bot
 COPY telegram_file_code_bot /app/telegram_file_code_bot
 COPY tg_msg_collector /app/tg_msg_collector
 

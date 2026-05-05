@@ -4,6 +4,7 @@
 
 - `telegram_file_code_bot`：基于取件码的内容暂存与取回机器人
 - `tg_msg_collector`：群组消息采集与检索机器人
+- `backup_bot`：定时把本地 SQLite/其他文件备份到 Telegram 群组
 
 `telegram_file_code_bot` 的详细设计见 [telegram_file_code_bot/DESIGN.md](telegram_file_code_bot/DESIGN.md)。
 
@@ -52,6 +53,17 @@ TG_MSG_COLLECTOR_DATABASE_PATH=
 TG_MSG_COLLECTOR_DATA_DIR=data
 TG_MSG_COLLECTOR_LOG_PATH=data/tg_msg_collector.log
 TG_MSG_COLLECTOR_PROXY_URL=
+
+# backup_bot
+BACKUP_BOT_ENABLED=false
+BACKUP_BOT_TOKEN=123456:replace-with-your-backup-bot-token
+BACKUP_CHAT_ID=-1001234567890
+BACKUP_INTERVAL_SECONDS=3600
+BACKUP_PATHS=data/bots.db
+BACKUP_STATE_PATH=data/backup_state.json
+BACKUP_DELETE_OLD=true
+BACKUP_CAPTION_PREFIX=SQLite backup
+BACKUP_ADMIN_USER_IDS=
 ```
 
 说明：
@@ -59,6 +71,13 @@ TG_MSG_COLLECTOR_PROXY_URL=
 - 两个 bot 必须使用不同 token。
 - `TELEGRAM_FILE_CODE_BOT_TOKEN` 是取件码 bot 的 token。
 - `TG_MSG_COLLECTOR_BOT_TOKEN` 是消息采集 bot 的 token。
+- `BACKUP_BOT_ENABLED=true` 时会启动备份 bot。
+- `BACKUP_BOT_TOKEN` 是备份 bot 的 token。
+- `BACKUP_CHAT_ID` 是接收备份文件的群组 ID。
+- `BACKUP_PATHS` 是要备份的文件列表，多个文件用英文逗号分隔。
+- `BACKUP_STATE_PATH` 用来记录每个文件上一次发送的 hash 和 Telegram message_id。
+- `BACKUP_DELETE_OLD=true` 时，文件变化并发送新版前，会尝试删除该文件上一条备份消息。
+- `BACKUP_ADMIN_USER_IDS` 配置后，只有这些用户可以使用 `/status` 和 `/backup_now`；留空则不限制。
 - 两个 bot 默认共用 `DATABASE_URL` 指向的 SQLite 文件。
 - `TG_MSG_COLLECTOR_DATABASE_PATH` 留空时，采集 bot 会使用 `DATABASE_URL` 中的 SQLite 文件；只有需要单独数据库时才填写。
 - `MAX_ITEMS_PER_BUNDLE` 和 `MAX_CODE_SUMMARY_LENGTH` 不配置、为空、`0` 或负数时都表示不限制。
@@ -169,6 +188,48 @@ DEFAULT_EXPIRY=forever
 /get ID
 /msg_group ID
 ```
+
+## backup_bot
+
+功能：
+
+- 定时检查一个或多个本地文件
+- 计算 SHA256，只有文件内容变化时才发送
+- 每个文件独立记录上一次的 `message_id` 和 hash
+- 发送新版本前尝试删除该文件对应的旧备份消息
+- 不依赖群组里的最后一条消息
+
+常用配置：
+
+```env
+BACKUP_BOT_ENABLED=true
+BACKUP_BOT_TOKEN=123456:replace-with-your-backup-bot-token
+BACKUP_CHAT_ID=-1001234567890
+BACKUP_INTERVAL_SECONDS=3600
+BACKUP_PATHS=data/bots.db
+BACKUP_STATE_PATH=data/backup_state.json
+BACKUP_DELETE_OLD=true
+```
+
+备份多个文件：
+
+```env
+BACKUP_PATHS=data/bots.db,data/bots.db-wal,data/bots.db-shm
+```
+
+命令：
+
+```text
+/start
+/status
+/backup_now
+```
+
+注意：
+
+- 备份 bot 需要被加入 `BACKUP_CHAT_ID` 对应的群组。
+- 如果要删除旧备份消息，备份 bot 需要有删除消息权限。
+- Telegram 对删除消息有时间限制，旧消息过久可能删除失败；删除失败不会阻止新备份发送。
 
 ## 安装
 

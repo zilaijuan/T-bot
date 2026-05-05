@@ -6,6 +6,8 @@ import logging
 
 from telegram.ext import Application
 
+from backup_bot.config import BackupSettings
+from backup_bot.main import build_application as build_backup_bot
 from telegram_file_code_bot.app.logging import configure_logging
 from telegram_file_code_bot.app.main import build_application as build_file_code_bot
 from tg_msg_collector.main import build_application as build_msg_collector_bot
@@ -41,10 +43,15 @@ async def main() -> None:
     configure_logging()
     configure_msg_collector_logging()
 
+    backup_settings = BackupSettings.from_env()
     applications: list[tuple[str, Application]] = [
         ("telegram_file_code_bot", build_file_code_bot()),
         ("tg_msg_collector", build_msg_collector_bot()),
     ]
+    if backup_settings.enabled:
+        applications.append(("backup_bot", build_backup_bot(backup_settings)))
+    else:
+        LOGGER.info("backup_bot is disabled. Set BACKUP_BOT_ENABLED=true to start it.")
 
     started: list[tuple[str, Application]] = []
     try:
