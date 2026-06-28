@@ -16,16 +16,16 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 def _sqlite_path_from_url(database_url):
     prefix = "sqlite:///"
     if not database_url.startswith(prefix):
-        raise RuntimeError("tg_msg_collector only supports sqlite:/// DATABASE_URL.")
+        raise RuntimeError("tg_msg_collector_bot only supports sqlite:/// DATABASE_URL.")
     raw_path = database_url[len(prefix):]
     if not raw_path:
         raise RuntimeError("DATABASE_URL must include a SQLite database path.")
     return raw_path
 
 
-DATA_DIR = Path(os.getenv("TG_MSG_COLLECTOR_DATA_DIR", os.getenv("DATA_DIR", "data"))).expanduser()
-LOG_PATH = Path(os.getenv("TG_MSG_COLLECTOR_LOG_PATH", str(DATA_DIR / "tg_msg_collector.log"))).expanduser()
-DB_PATH = os.getenv("TG_MSG_COLLECTOR_DATABASE_PATH", "").strip() or _sqlite_path_from_url(
+DATA_DIR = Path(os.getenv("TG_MSG_COLLECTOR_BOT_DATA_DIR", os.getenv("TG_MSG_COLLECTOR_DATA_DIR", os.getenv("DATA_DIR", "data")))).expanduser()
+LOG_PATH = Path(os.getenv("TG_MSG_COLLECTOR_BOT_LOG_PATH", os.getenv("TG_MSG_COLLECTOR_LOG_PATH", str(DATA_DIR / "tg_msg_collector_bot.log")))).expanduser()
+DB_PATH = os.getenv("TG_MSG_COLLECTOR_BOT_DATABASE_PATH", os.getenv("TG_MSG_COLLECTOR_DATABASE_PATH", "")).strip() or _sqlite_path_from_url(
     os.getenv("DATABASE_URL", "sqlite:///data/bots.db")
 )
 BOT_TOKEN = (
@@ -33,8 +33,8 @@ BOT_TOKEN = (
     or os.getenv("MSG_COLLECTOR_BOT_TOKEN", "").strip()
     or os.getenv("BOT_TOKEN", "").strip()
 )
-ALLOWED_GROUP_IDS = [group_id.strip() for group_id in os.getenv('TG_MSG_COLLECTOR_ALLOWED_GROUP_IDS', os.getenv('ALLOWED_GROUP_IDS', '')).split(',') if group_id.strip()]
-PROXY_URL = os.getenv('TG_MSG_COLLECTOR_PROXY_URL', os.getenv('PROXY_URL'))  # 获取代理地址
+ALLOWED_GROUP_IDS = [group_id.strip() for group_id in os.getenv('TG_MSG_COLLECTOR_BOT_ALLOWED_GROUP_IDS', os.getenv('TG_MSG_COLLECTOR_ALLOWED_GROUP_IDS', os.getenv('ALLOWED_GROUP_IDS', ''))).split(',') if group_id.strip()]
+PROXY_URL = os.getenv('TG_MSG_COLLECTOR_BOT_PROXY_URL', os.getenv('TG_MSG_COLLECTOR_PROXY_URL', os.getenv('TELEGRAM_PROXY_URL', os.getenv('PROXY_URL'))))  # 获取代理地址
 
 
 def configure_logging():
@@ -54,7 +54,7 @@ def configure_logging():
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
-    logger = logging.getLogger("tg_msg_collector")
+    logger = logging.getLogger("tg_msg_collector_bot")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
     logger.addHandler(file_handler)

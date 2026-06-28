@@ -47,7 +47,11 @@ def build_application(settings: Settings | None = None) -> Application:
     )
     bundle_service = BundleService(settings=settings, repository=repository, code_service=code_service)
 
-    application = Application.builder().token(settings.bot_token).post_init(post_init).build()
+    builder = Application.builder().token(settings.bot_token).post_init(post_init)
+    if settings.proxy_url:
+        builder.proxy(settings.proxy_url)
+        builder.get_updates_proxy(settings.proxy_url)
+    application = builder.build()
     application.bot_data["settings"] = settings
     application.bot_data["repository"] = repository
     application.bot_data["code_service"] = code_service

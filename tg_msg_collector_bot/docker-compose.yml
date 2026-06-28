@@ -3,7 +3,7 @@ version: '3.8'
 services:
   tg_bot:
     build: .
-    container_name: tg_msg_collector
+    container_name: tg_msg_collector_bot
     restart: always
     env_file:
       - .env

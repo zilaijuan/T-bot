@@ -18,6 +18,7 @@ class BackupSettings:
     delete_old: bool
     caption_prefix: str
     admin_user_ids: frozenset[int]
+    proxy_url: str | None
 
     @classmethod
     def from_env(cls) -> "BackupSettings":
@@ -44,6 +45,12 @@ class BackupSettings:
             delete_old=_parse_bool(os.getenv("BACKUP_DELETE_OLD"), default=True),
             caption_prefix=os.getenv("BACKUP_CAPTION_PREFIX", "SQLite backup").strip() or "SQLite backup",
             admin_user_ids=_parse_admin_user_ids(os.getenv("BACKUP_ADMIN_USER_IDS", "")),
+            proxy_url=(
+                os.getenv("BACKUP_BOT_PROXY_URL", "").strip()
+                or os.getenv("TELEGRAM_PROXY_URL", "").strip()
+                or os.getenv("PROXY_URL", "").strip()
+                or None
+            ),
         )
         if settings.enabled:
             settings.validate()

@@ -26,6 +26,7 @@ class Settings:
     allow_public_redeem: bool
     web_enabled: bool
     public_base_url: str | None
+    proxy_url: str | None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -81,6 +82,12 @@ class Settings:
             allow_public_redeem=_parse_bool(os.getenv("ALLOW_PUBLIC_REDEEM"), default=True),
             web_enabled=_parse_bool(os.getenv("WEB_ENABLED"), default=False),
             public_base_url=os.getenv("PUBLIC_BASE_URL", "").strip() or None,
+            proxy_url=(
+                os.getenv("TELEGRAM_FILE_CODE_BOT_PROXY_URL", "").strip()
+                or os.getenv("TELEGRAM_PROXY_URL", "").strip()
+                or os.getenv("PROXY_URL", "").strip()
+                or None
+            ),
         )
 
 

@@ -12,9 +12,13 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY app.py /app/app.py
 COPY backup_bot /app/backup_bot
+COPY code_collector_bot /app/code_collector_bot
+COPY code_router_agent /app/code_router_agent
 COPY telegram_file_code_bot /app/telegram_file_code_bot
-COPY tg_msg_collector /app/tg_msg_collector
+COPY tg_msg_collector_bot /app/tg_msg_collector_bot
 
 RUN mkdir -p /app/data/uploads
 
 CMD ["python", "app.py"]
+
+

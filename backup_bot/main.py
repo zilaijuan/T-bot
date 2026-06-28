@@ -38,7 +38,11 @@ def build_application(settings: BackupSettings | None = None) -> Application:
     settings.validate()
     service = BackupService(settings)
 
-    application = Application.builder().token(settings.bot_token).post_init(post_init).build()
+    builder = Application.builder().token(settings.bot_token).post_init(post_init)
+    if settings.proxy_url:
+        builder.proxy(settings.proxy_url)
+        builder.get_updates_proxy(settings.proxy_url)
+    application = builder.build()
     application.bot_data["settings"] = settings
     application.bot_data["backup_service"] = service
     application.add_handler(CommandHandler("start", start_handler))
