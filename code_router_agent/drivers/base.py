@@ -14,5 +14,8 @@ class Driver(Protocol):
     def matches(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> bool:
         """Return whether this driver can handle the task."""
 
+    def matched_code(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> str | None:
+        """Return the code used for duplicate detection after this driver matches."""
+
     async def step(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> ExecutionResult:
         """Execute one state-machine step for a task."""

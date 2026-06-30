@@ -47,6 +47,10 @@ class QQCoderDriver:
     def matches(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> bool:
         return bool(extract_qq_coder_codes(task.message_content))
 
+    def matched_code(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> str | None:
+        codes = extract_qq_coder_codes(task.message_content)
+        return codes[0].raw if codes else None
+
     async def step(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> ExecutionResult:
         codes = extract_qq_coder_codes(task.message_content)
         if not codes:

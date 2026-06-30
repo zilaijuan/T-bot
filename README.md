@@ -267,6 +267,7 @@ user_id
 message_content
 status
 target_worker
+code
 state_payload
 next_run_at
 created_at
@@ -279,8 +280,9 @@ updated_at
 
 - 作为 Telegram Workflow Execution Engine 的后台 Router/Worker Agent
 - 复用 `workflow_tasks` 表，从 `NEW`、`WAIT`、`RETRY` 状态中领取到期任务
-- 从已启用 driver 中逐个执行 `matches()` 规则，命中后执行该 driver 的一个 step
-- 根据 `ExecutionResult` 更新 `status`、`target_worker`、`state_payload` 和 `next_run_at`
+- 从已启用 driver 中逐个执行 `matches()` 规则，命中后提取 matched code；如果已有相同 `code` 的 `DONE` 任务，则把当前任务标记为 `DUPLICATE` 并跳过发送，否则执行该 driver 的一个 step
+- 根据 `ExecutionResult` 更新 `status`、`target_worker`、`code`、`state_payload` 和 `next_run_at`
+- Agent 启动时会尝试给旧任务回填 `code`，让历史 `DONE` 任务也能参与重复判断
 - Agent 本身不接收 Telegram 消息，也不是 Telegram Bot
 
 配置：
@@ -289,14 +291,39 @@ updated_at
 CODE_ROUTER_AGENT_ENABLED=true
 CODE_ROUTER_AGENT_POLL_INTERVAL_SECONDS=2
 CODE_ROUTER_AGENT_IDLE_SLEEP_SECONDS=5
+CODE_ROUTER_AGENT_CHANNEL_LISTENER_ENABLED=false
+CODE_ROUTER_AGENT_CHANNEL_LISTENER_CHANNEL=-1003948153894
 ```
 
 说明：
 
 - Router Agent 启动时会自动加载 registry 中 `auto_register = True` 的 driver，并遍历这些 driver 的规则来判断任务归属。
-- 当前已内置 `qq_coder`、`zyxfids` 和 `amumu_jiema` driver。`default` / `noop` 仅用于调试骨架，不会主动匹配任务；没有任何 driver 命中时任务会标记为 `FAILED`。
+- 当前已内置 `qq_coder`、`zyxfids`、`amumu_jiema` 和 `wenjianji` driver。`default` / `noop` 仅用于调试骨架，不会主动匹配任务；没有任何 driver 命中时任务会标记为 `FAILED`。
 - 后续接入真实第三方 Telegram Bot 时，在 `code_router_agent/drivers` 里新增 driver，实现 `matches()` 和 `step()`，在 registry 中注册 driver 名称，并通过 driver 类上的 `auto_register` 硬编码开关控制是否自动启用。
 
+
+
+
+Channel 监听任务：
+
+- `CODE_ROUTER_AGENT_CHANNEL_LISTENER_ENABLED=true` 时，`code_router_agent` 会额外启动一个 Telethon 监听任务。
+- `CODE_ROUTER_AGENT_CHANNEL_LISTENER_CHANNEL` 是要监听的 channel 用户名或 id，默认 `a260621`。
+- 收到的新消息会保存到 SQLite 新表 `channel_messages`。
+- `channel_messages` 使用 `(channel_id, message_id)` 唯一约束，重启或重复事件不会重复写入。
+
+`channel_messages` 核心字段：
+
+```text
+id
+channel_id
+channel_username
+message_id
+sender_id
+message_date
+text
+raw_message_json
+created_at
+```
 
 ### QQ coder driver
 
@@ -362,6 +389,26 @@ ZYXFIDS_DRIVER_DRY_RUN=true
 ```env
 AMUMU_JIEMA_DRIVER_TARGET_BOT=@amumujiemabot
 AMUMU_JIEMA_DRIVER_DRY_RUN=true
+```
+
+### WenJianJi driver
+
+用途：
+
+- Driver 名称：`wenjianji`
+- 匹配 `wenjianjibot_` 开头、后面跟字母数字或下划线的代码，例如 `wenjianjibot_4v_50p_1d_6kcRYUDTG8VH11Xp`
+- `WENJIANJI_DRIVER_DRY_RUN=true` 时只记录匹配结果，不真实发送
+- `WENJIANJI_DRIVER_DRY_RUN=false` 时使用 Telethon 用户账号把原始消息文本发送给 `WENJIANJI_DRIVER_TARGET_BOT`
+- 发送后会读取 bot 返回的分页消息，自动点击包含 `获取下一组` 的按钮，直到到达最后一组、按钮消失、等待超时或达到最大页数；如果等待超时或达到最大页数，会记录 `stop_reason` 并让任务进入 `RETRY`，不会误标记为 `DONE`
+
+配置示例：
+
+```env
+WENJIANJI_DRIVER_TARGET_BOT=@WenJianJibot
+WENJIANJI_DRIVER_DRY_RUN=true
+WENJIANJI_DRIVER_PAGE_WAIT_SECONDS=60
+WENJIANJI_DRIVER_POLL_INTERVAL_SECONDS=2
+WENJIANJI_DRIVER_MAX_PAGES=50
 ```
 
 ## backup_bot

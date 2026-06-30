@@ -12,6 +12,7 @@ class TaskStatus(StrEnum):
     DONE = "DONE"
     FAILED = "FAILED"
     RETRY = "RETRY"
+    DUPLICATE = "DUPLICATE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +31,7 @@ class TaskInput:
 @dataclass(frozen=True, slots=True)
 class TaskRecord:
     task_id: int
+    code: str | None
     user_id: int
     username: str | None
     chat_id: int

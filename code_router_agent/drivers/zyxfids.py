@@ -51,6 +51,14 @@ class ZyxFidsDriver:
         content = task.message_content
         return ZYXFIDS_BOT_USERNAME in content.lower() or bool(extract_zyxfids_codes(content))
 
+    def matched_code(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> str | None:
+        codes = extract_zyxfids_codes(task.message_content)
+        if codes:
+            return codes[0].code
+        if ZYXFIDS_BOT_USERNAME in task.message_content.lower():
+            return task.message_content.strip()
+        return None
+
     async def step(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> ExecutionResult:
         codes = extract_zyxfids_codes(task.message_content)
         if not codes and ZYXFIDS_BOT_USERNAME in task.message_content.lower():

@@ -14,6 +14,9 @@ class NoopDriver:
     def matches(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> bool:
         return False
 
+    def matched_code(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> str | None:
+        return None
+
     async def step(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> ExecutionResult:
         return ExecutionResult(
             status=ExecutionStatus.DONE,

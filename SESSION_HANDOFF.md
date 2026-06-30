@@ -92,8 +92,9 @@ CODE_COLLECTOR_BOT_PROXY_URL=
 - 支持状态大致包括 `NEW`、`WAIT`、`RETRY` 等。
 - 启动时通过 registry 自动加载 `auto_register = True` 的 driver。
 - 对每个任务，按 driver 顺序调用 `matches(task, settings)`。
-- 第一个命中的 driver 执行 `step(task, settings)`。
-- 执行后更新任务状态、真实 `target_worker`、`state_payload`、`next_run_at` 等。
+- 第一个命中的 driver 会先提取 matched code；如果已有相同 `code` 的 `DONE` 任务，当前任务会标记为 `DUPLICATE` 并跳过发送，否则执行 `step(task, settings)`。
+- 执行后更新任务状态、真实 `target_worker`、`code`、`state_payload`、`next_run_at` 等。
+- Agent 启动时会尝试给旧任务回填 `code`，让历史 `DONE` 任务也能参与重复判断。
 - 如果没有 driver 命中，任务会标记为 `FAILED`，`target_worker` 为 `unmatched`。
 
 关键配置：
@@ -159,6 +160,34 @@ code_router_agent/drivers/
 - `amumu_jiema`
 
 `default` / `noop` 仅用于调试骨架，不主动匹配任务。
+
+### wenjianji driver
+
+文件：
+
+```text
+code_router_agent/drivers/wenjianji.py
+```
+
+匹配示例：
+
+```text
+wenjianjibot_4v_50p_1d_6kcRYUDTG8VH11Xp
+wenjianjibot_5v_MVYuGKVfIAGladtZ
+wenjianjibot_5v_3p_EOmybJpzCt3jOI1s
+```
+
+关键配置：
+
+```env
+WENJIANJI_DRIVER_TARGET_BOT=@WenJianJibot
+WENJIANJI_DRIVER_DRY_RUN=true
+WENJIANJI_DRIVER_PAGE_WAIT_SECONDS=60
+WENJIANJI_DRIVER_POLL_INTERVAL_SECONDS=2
+WENJIANJI_DRIVER_MAX_PAGES=50
+```
+
+真实发送时会自动点击分页消息中的 `获取下一组` 按钮，直到最后一组或达到保护上限；未等到下一页时会记录 `no_page_update_after_click` 并进入 `RETRY`。
 
 ### 所有 driver 的统一发送规则
 

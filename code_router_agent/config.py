@@ -20,11 +20,18 @@ class CodeRouterAgentSettings:
     zyxfids_dry_run: bool
     amumu_jiema_target_bot: str | None
     amumu_jiema_dry_run: bool
+    wenjianji_target_bot: str | None
+    wenjianji_dry_run: bool
+    wenjianji_page_wait_seconds: float
+    wenjianji_poll_interval_seconds: float
+    wenjianji_max_pages: int
     telethon_api_id: int | None
     telethon_api_hash: str | None
     telethon_session: str
     telethon_proxy_url: str | None
     telethon_timeout_seconds: float
+    channel_listener_enabled: bool
+    channel_listener_channel: str
 
     @classmethod
     def from_env(cls) -> "CodeRouterAgentSettings":
@@ -49,6 +56,20 @@ class CodeRouterAgentSettings:
             zyxfids_dry_run=_parse_bool(os.getenv("ZYXFIDS_DRIVER_DRY_RUN"), default=True),
             amumu_jiema_target_bot=os.getenv("AMUMU_JIEMA_DRIVER_TARGET_BOT", "@amumujiemabot").strip() or None,
             amumu_jiema_dry_run=_parse_bool(os.getenv("AMUMU_JIEMA_DRIVER_DRY_RUN"), default=True),
+            wenjianji_target_bot=os.getenv("WENJIANJI_DRIVER_TARGET_BOT", "@WenJianJibot").strip() or None,
+            wenjianji_dry_run=_parse_bool(os.getenv("WENJIANJI_DRIVER_DRY_RUN"), default=True),
+            wenjianji_page_wait_seconds=_parse_positive_float(
+                os.getenv("WENJIANJI_DRIVER_PAGE_WAIT_SECONDS", "60"),
+                name="WENJIANJI_DRIVER_PAGE_WAIT_SECONDS",
+            ),
+            wenjianji_poll_interval_seconds=_parse_positive_float(
+                os.getenv("WENJIANJI_DRIVER_POLL_INTERVAL_SECONDS", "2"),
+                name="WENJIANJI_DRIVER_POLL_INTERVAL_SECONDS",
+            ),
+            wenjianji_max_pages=_parse_positive_int(
+                os.getenv("WENJIANJI_DRIVER_MAX_PAGES", "50"),
+                name="WENJIANJI_DRIVER_MAX_PAGES",
+            ),
             telethon_api_id=_parse_optional_int(os.getenv("TELETHON_API_ID"), name="TELETHON_API_ID"),
             telethon_api_hash=os.getenv("TELETHON_API_HASH", "").strip() or None,
             telethon_session=os.getenv("TELETHON_SESSION", "data/telethon_user.session").strip() or "data/telethon_user.session",
@@ -62,16 +83,31 @@ class CodeRouterAgentSettings:
                 os.getenv("TELETHON_TIMEOUT_SECONDS", "30"),
                 name="TELETHON_TIMEOUT_SECONDS",
             ),
+            channel_listener_enabled=_parse_bool(
+                os.getenv("CODE_ROUTER_AGENT_CHANNEL_LISTENER_ENABLED"),
+                default=False,
+            ),
+            channel_listener_channel=os.getenv("CODE_ROUTER_AGENT_CHANNEL_LISTENER_CHANNEL", "a260621").strip() or "a260621",
         )
 
     def validate(self) -> None:
-        needs_telethon = (not self.qq_coder_dry_run) or (not self.zyxfids_dry_run) or (not self.amumu_jiema_dry_run)
+        needs_telethon = (
+            (not self.qq_coder_dry_run)
+            or (not self.zyxfids_dry_run)
+            or (not self.amumu_jiema_dry_run)
+            or (not self.wenjianji_dry_run)
+            or self.channel_listener_enabled
+        )
         if not self.qq_coder_dry_run and not self.qq_coder_target_bot:
             raise RuntimeError("QQ_CODER_DRIVER_TARGET_BOT is required when QQ_CODER_DRIVER_DRY_RUN=false.")
         if not self.zyxfids_dry_run and not self.zyxfids_target_bot:
             raise RuntimeError("ZYXFIDS_DRIVER_TARGET_BOT is required when ZYXFIDS_DRIVER_DRY_RUN=false.")
         if not self.amumu_jiema_dry_run and not self.amumu_jiema_target_bot:
             raise RuntimeError("AMUMU_JIEMA_DRIVER_TARGET_BOT is required when AMUMU_JIEMA_DRIVER_DRY_RUN=false.")
+        if not self.wenjianji_dry_run and not self.wenjianji_target_bot:
+            raise RuntimeError("WENJIANJI_DRIVER_TARGET_BOT is required when WENJIANJI_DRIVER_DRY_RUN=false.")
+        if self.channel_listener_enabled and not self.channel_listener_channel:
+            raise RuntimeError("CODE_ROUTER_AGENT_CHANNEL_LISTENER_CHANNEL is required when channel listener is enabled.")
         if needs_telethon and (self.telethon_api_id is None or not self.telethon_api_hash):
             raise RuntimeError("TELETHON_API_ID and TELETHON_API_HASH are required when a Telethon driver dry-run is disabled.")
 
@@ -102,6 +138,16 @@ def _parse_positive_float(raw_value: str | None, *, name: str) -> float:
         value = float((raw_value or "").strip())
     except ValueError as exc:
         raise RuntimeError(f"{name} must be a number.") from exc
+    if value <= 0:
+        raise RuntimeError(f"{name} must be greater than 0.")
+    return value
+
+
+def _parse_positive_int(raw_value: str | None, *, name: str) -> int:
+    try:
+        value = int((raw_value or "").strip())
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer.") from exc
     if value <= 0:
         raise RuntimeError(f"{name} must be greater than 0.")
     return value

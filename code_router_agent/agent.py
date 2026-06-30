@@ -7,8 +7,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from telethon.errors import InputUserDeactivatedError
+
 from code_collector_bot.models import TaskRecord, TaskStatus
 from code_collector_bot.storage import TaskRepository
+from code_router_agent.channel_listener import ChannelMessageListener
 from code_router_agent.config import CodeRouterAgentSettings
 from code_router_agent.drivers import create_auto_registered_drivers
 from code_router_agent.drivers.base import Driver
@@ -26,17 +29,57 @@ class CodeRouterAgent:
         self.drivers = create_auto_registered_drivers()
         if not self.drivers:
             raise RuntimeError("No auto-registered code router drivers are enabled.")
+        self._backfill_missing_codes()
         self._stop_event = asyncio.Event()
+
+    def _backfill_missing_codes(self) -> None:
+        updated_count = 0
+        while True:
+            tasks = self.repository.list_tasks_missing_code(limit=1000)
+            if not tasks:
+                break
+            changed_in_batch = 0
+            for task in tasks:
+                driver = self._select_driver(task)
+                if driver is None:
+                    continue
+                matched_code = driver.matched_code(task, self.settings)
+                if not matched_code:
+                    continue
+                self.repository.update_task_code(task.task_id, matched_code)
+                updated_count += 1
+                changed_in_batch += 1
+            if changed_in_batch == 0:
+                break
+        if updated_count:
+            LOGGER.info("Backfilled code for %s workflow tasks.", updated_count)
 
     async def run_forever(self) -> None:
         driver_names = ", ".join(driver.name for driver in self.drivers)
         LOGGER.info("code_router_agent started with drivers: %s", driver_names)
-        worker_task = asyncio.create_task(self._run_router(), name="code_router_agent:router")
+        tasks: list[asyncio.Task[None]] = [
+            asyncio.create_task(self._run_router(), name="code_router_agent:router")
+        ]
+        if self.settings.channel_listener_enabled:
+            listener = ChannelMessageListener(self.settings)
+            tasks.append(
+                asyncio.create_task(
+                    listener.run_forever(self._stop_event),
+                    name="code_router_agent:channel_listener",
+                )
+            )
+        else:
+            LOGGER.info(
+                "code_router_agent channel listener is disabled. Set CODE_ROUTER_AGENT_CHANNEL_LISTENER_ENABLED=true to start it."
+            )
         try:
             await self._stop_event.wait()
         finally:
-            with contextlib.suppress(Exception):
-                await worker_task
+            for task in tasks:
+                task.cancel()
+            for task in tasks:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
             LOGGER.info("code_router_agent stopped.")
 
     def stop(self) -> None:
@@ -78,6 +121,38 @@ class CodeRouterAgent:
             )
             return
 
+        matched_code = driver.matched_code(task, self.settings)
+        if matched_code:
+            duplicate_task = self.repository.find_done_task_by_code(matched_code, exclude_task_id=task.task_id)
+            if duplicate_task is not None:
+                LOGGER.info(
+                    "Task %s matched driver %s but duplicates DONE task %s for code %s.",
+                    task.task_id,
+                    driver.name,
+                    duplicate_task.task_id,
+                    matched_code,
+                )
+                state_payload = _encode_state_payload(
+                    task=task,
+                    driver_name=driver.name,
+                    new_state={
+                        "driver": driver.name,
+                        "code": matched_code,
+                        "duplicate_of_task_id": duplicate_task.task_id,
+                    },
+                    result={"message": "Duplicate code; task skipped.", "duplicate_of_task_id": duplicate_task.task_id},
+                    next_action="NONE",
+                )
+                self.repository.update_task_state(
+                    task.task_id,
+                    status=TaskStatus.DUPLICATE,
+                    state_payload=state_payload,
+                    next_run_at=datetime.now(timezone.utc),
+                    target_worker=driver.name,
+                    code=matched_code,
+                )
+                return
+
         try:
             LOGGER.info("Task %s matched driver %s; executing step.", task.task_id, driver.name)
             result = await driver.step(task, self.settings)
@@ -85,7 +160,7 @@ class CodeRouterAgent:
             state_payload = _encode_state_payload(
                 task=task,
                 driver_name=driver.name,
-                new_state=result.state_payload,
+                new_state={**result.state_payload, "code": matched_code},
                 result=result.result,
                 next_action=str(result.next_action),
             )
@@ -95,6 +170,7 @@ class CodeRouterAgent:
                 state_payload=state_payload,
                 next_run_at=next_run_at,
                 target_worker=driver.name,
+                code=matched_code,
             )
             LOGGER.info(
                 "Task %s handled by driver %s: %s -> %s",
@@ -104,20 +180,31 @@ class CodeRouterAgent:
                 updated.status if updated else result.to_task_status(),
             )
         except Exception as exc:
-            LOGGER.exception("Task %s failed while running driver %s.", task.task_id, driver.name)
+            non_retryable = _is_non_retryable_driver_error(exc)
+            next_status = TaskStatus.FAILED if non_retryable else TaskStatus.RETRY
+            next_run_at = datetime.now(timezone.utc)
+            if not non_retryable:
+                next_run_at += timedelta(seconds=self.settings.idle_sleep_seconds)
+            LOGGER.exception(
+                "Task %s failed while running driver %s; status=%s.",
+                task.task_id,
+                driver.name,
+                next_status,
+            )
             state_payload = _encode_state_payload(
                 task=task,
                 driver_name=driver.name,
-                new_state=_decode_state_payload(task.state_payload),
-                result={"error": str(exc)},
+                new_state={**_decode_state_payload(task.state_payload), "code": matched_code},
+                result={"error": str(exc), "error_type": type(exc).__name__, "non_retryable": non_retryable},
                 next_action="NONE",
             )
             self.repository.update_task_state(
                 task.task_id,
-                status=TaskStatus.RETRY,
+                status=next_status,
                 state_payload=state_payload,
-                next_run_at=datetime.now(timezone.utc) + timedelta(seconds=self.settings.idle_sleep_seconds),
+                next_run_at=next_run_at,
                 target_worker=driver.name,
+                code=matched_code,
             )
 
     def _select_driver(self, task: TaskRecord) -> Driver | None:
@@ -126,6 +213,9 @@ class CodeRouterAgent:
                 return driver
         return None
 
+
+def _is_non_retryable_driver_error(exc: Exception) -> bool:
+    return isinstance(exc, InputUserDeactivatedError)
 
 def _encode_state_payload(
     *,

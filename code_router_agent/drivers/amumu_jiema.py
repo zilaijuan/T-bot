@@ -37,6 +37,10 @@ class AmumuJiemaDriver:
     def matches(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> bool:
         return bool(extract_amumu_jiema_codes(task.message_content))
 
+    def matched_code(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> str | None:
+        codes = extract_amumu_jiema_codes(task.message_content)
+        return codes[0].code if codes else None
+
     async def step(self, task: TaskRecord, settings: CodeRouterAgentSettings) -> ExecutionResult:
         codes = extract_amumu_jiema_codes(task.message_content)
         if not codes:

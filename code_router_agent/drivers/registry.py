@@ -6,6 +6,7 @@ from code_router_agent.drivers.noop import NoopDriver
 from code_router_agent.drivers.qq_coder import QQCoderDriver
 from code_router_agent.drivers.zyxfids import ZyxFidsDriver
 from code_router_agent.drivers.unknown import UnknownDriver
+from code_router_agent.drivers.wenjianji import WenJianJiDriver
 
 
 DRIVER_FACTORIES = {
@@ -14,6 +15,7 @@ DRIVER_FACTORIES = {
     "qq_coder": QQCoderDriver,
     "zyxfids": ZyxFidsDriver,
     "amumu_jiema": AmumuJiemaDriver,
+    "wenjianji": WenJianJiDriver,
 }
 
 

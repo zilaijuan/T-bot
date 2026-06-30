@@ -26,6 +26,7 @@ class TaskRepository:
                 """
                 CREATE TABLE IF NOT EXISTS workflow_tasks (
                     task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT,
                     user_id INTEGER NOT NULL,
                     username TEXT,
                     chat_id INTEGER NOT NULL,
@@ -43,6 +44,7 @@ class TaskRepository:
                 )
                 """
             )
+            self._migrate_schema()
             self.connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_tasks_schedule ON workflow_tasks(status, next_run_at)"
             )
@@ -52,7 +54,18 @@ class TaskRepository:
             self.connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_workflow_tasks_user_id ON workflow_tasks(user_id, created_at)"
             )
+            self.connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_tasks_code_status ON workflow_tasks(code, status)"
+            )
             self.connection.commit()
+
+    def _migrate_schema(self) -> None:
+        columns = {
+            str(row["name"])
+            for row in self.connection.execute("PRAGMA table_info(workflow_tasks)").fetchall()
+        }
+        if "code" not in columns:
+            self.connection.execute("ALTER TABLE workflow_tasks ADD COLUMN code TEXT")
 
     def create_task(self, task: TaskInput) -> TaskRecord:
         now = datetime.now(timezone.utc)
@@ -157,6 +170,7 @@ class TaskRepository:
         state_payload: str,
         next_run_at: datetime | None = None,
         target_worker: str | None = None,
+        code: str | None = None,
     ) -> TaskRecord | None:
         now = datetime.now(timezone.utc)
         schedule_time = next_run_at or now
@@ -168,13 +182,52 @@ class TaskRepository:
                     state_payload = ?,
                     next_run_at = ?,
                     target_worker = COALESCE(?, target_worker),
+                    code = COALESCE(?, code),
                     updated_at = ?
                 WHERE task_id = ?
                 """,
-                (status.value, state_payload, _to_iso(schedule_time), target_worker, _to_iso(now), task_id),
+                (status.value, state_payload, _to_iso(schedule_time), target_worker, code, _to_iso(now), task_id),
             )
             self.connection.commit()
         return self.get_task(task_id)
+
+    def list_tasks_missing_code(self, *, limit: int = 1000) -> tuple[TaskRecord, ...]:
+        with self.lock:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM workflow_tasks
+                WHERE code IS NULL OR code = ''
+                ORDER BY task_id ASC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return tuple(_task_from_row(row) for row in rows)
+
+    def update_task_code(self, task_id: int, code: str) -> TaskRecord | None:
+        now = datetime.now(timezone.utc)
+        with self.lock:
+            self.connection.execute(
+                """
+                UPDATE workflow_tasks
+                SET code = ?, updated_at = ?
+                WHERE task_id = ?
+                """,
+                (code, _to_iso(now), task_id),
+            )
+            self.connection.commit()
+        return self.get_task(task_id)
+
+    def find_done_task_by_code(self, code: str, *, exclude_task_id: int | None = None) -> TaskRecord | None:
+        if exclude_task_id is None:
+            query = "SELECT * FROM workflow_tasks WHERE code = ? AND status = ? ORDER BY updated_at DESC, task_id DESC LIMIT 1"
+            params: tuple[object, ...] = (code, TaskStatus.DONE.value)
+        else:
+            query = "SELECT * FROM workflow_tasks WHERE code = ? AND status = ? AND task_id <> ? ORDER BY updated_at DESC, task_id DESC LIMIT 1"
+            params = (code, TaskStatus.DONE.value, exclude_task_id)
+        with self.lock:
+            row = self.connection.execute(query, params).fetchone()
+        return _task_from_row(row) if row is not None else None
 
     def count_by_status(self) -> dict[str, int]:
         with self.lock:
@@ -187,6 +240,7 @@ class TaskRepository:
 def _task_from_row(row: sqlite3.Row) -> TaskRecord:
     return TaskRecord(
         task_id=int(row["task_id"]),
+        code=row["code"],
         user_id=int(row["user_id"]),
         username=row["username"],
         chat_id=int(row["chat_id"]),
