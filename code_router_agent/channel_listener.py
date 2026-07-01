@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from datetime import datetime
+from pathlib import Path
 
 from telethon import events
 from telethon.utils import get_peer_id
@@ -23,7 +25,11 @@ class ChannelMessageListener:
 
     async def run_forever(self, stop_event: asyncio.Event) -> None:
         channel = self.settings.channel_listener_channel
-        async with build_telethon_client(self.settings) as client:
+        _ensure_channel_listener_session(self.settings)
+        async with build_telethon_client(
+            self.settings,
+            session_path=self.settings.channel_listener_telethon_session,
+        ) as client:
             if not await client.is_user_authorized():
                 raise RuntimeError("Telethon session is not authorized. Log in once before enabling channel listener.")
 
@@ -108,11 +114,22 @@ class ChannelMessageListener:
 
 
 async def resolve_channel_id(settings: CodeRouterAgentSettings) -> int:
-    async with build_telethon_client(settings) as client:
+    _ensure_channel_listener_session(settings)
+    async with build_telethon_client(settings, session_path=settings.channel_listener_telethon_session) as client:
         if not await client.is_user_authorized():
             raise RuntimeError("Telethon session is not authorized. Log in once before resolving channel id.")
         entity = await client.get_entity(_parse_channel_reference(settings.channel_listener_channel))
         return int(get_peer_id(entity))
+
+
+def _ensure_channel_listener_session(settings: CodeRouterAgentSettings) -> None:
+    source = Path(settings.telethon_session).expanduser()
+    target = Path(settings.channel_listener_telethon_session).expanduser()
+    if source == target or target.exists() or not source.exists():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    LOGGER.info("Copied Telethon session for channel listener: %s -> %s", source, target)
 
 
 def _parse_channel_reference(value: str) -> str | int:

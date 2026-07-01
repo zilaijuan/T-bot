@@ -28,6 +28,7 @@ class CodeRouterAgentSettings:
     telethon_api_id: int | None
     telethon_api_hash: str | None
     telethon_session: str
+    channel_listener_telethon_session: str
     telethon_proxy_url: str | None
     telethon_timeout_seconds: float
     channel_listener_enabled: bool
@@ -38,6 +39,11 @@ class CodeRouterAgentSettings:
         load_dotenv()
 
         database_url = os.getenv("DATABASE_URL", "sqlite:///data/bots.db").strip() or "sqlite:///data/bots.db"
+        telethon_session = os.getenv("TELETHON_SESSION", "data/telethon_user.session").strip() or "data/telethon_user.session"
+        channel_listener_session = (
+            os.getenv("CODE_ROUTER_AGENT_CHANNEL_LISTENER_TELETHON_SESSION", "").strip()
+            or _default_channel_listener_session(telethon_session)
+        )
         return cls(
             enabled=_parse_bool(os.getenv("CODE_ROUTER_AGENT_ENABLED"), default=False),
             database_url=database_url,
@@ -72,7 +78,8 @@ class CodeRouterAgentSettings:
             ),
             telethon_api_id=_parse_optional_int(os.getenv("TELETHON_API_ID"), name="TELETHON_API_ID"),
             telethon_api_hash=os.getenv("TELETHON_API_HASH", "").strip() or None,
-            telethon_session=os.getenv("TELETHON_SESSION", "data/telethon_user.session").strip() or "data/telethon_user.session",
+            telethon_session=telethon_session,
+            channel_listener_telethon_session=channel_listener_session,
             telethon_proxy_url=(
                 os.getenv("TELETHON_PROXY_URL", "").strip()
                 or os.getenv("TELEGRAM_PROXY_URL", "").strip()
@@ -110,6 +117,13 @@ class CodeRouterAgentSettings:
             raise RuntimeError("CODE_ROUTER_AGENT_CHANNEL_LISTENER_CHANNEL is required when channel listener is enabled.")
         if needs_telethon and (self.telethon_api_id is None or not self.telethon_api_hash):
             raise RuntimeError("TELETHON_API_ID and TELETHON_API_HASH are required when a Telethon driver dry-run is disabled.")
+
+
+def _default_channel_listener_session(telethon_session: str) -> str:
+    path = Path(telethon_session).expanduser()
+    if path.suffix == ".session":
+        return str(path.with_name(f"{path.stem}_channel_listener{path.suffix}"))
+    return str(path.with_name(f"{path.name}_channel_listener"))
 
 
 def _sqlite_path_from_url(database_url: str) -> Path:

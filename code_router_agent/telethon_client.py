@@ -36,7 +36,7 @@ def parse_telethon_proxy(proxy_url: str | None):
     return (proxy_type, parsed.hostname, parsed.port, rdns, username, password)
 
 
-def build_telethon_client(settings: CodeRouterAgentSettings):
+def build_telethon_client(settings: CodeRouterAgentSettings, *, session_path: str | None = None):
     if settings.telethon_api_id is None or not settings.telethon_api_hash:
         raise RuntimeError("TELETHON_API_ID and TELETHON_API_HASH are required.")
 
@@ -45,10 +45,10 @@ def build_telethon_client(settings: CodeRouterAgentSettings):
     except ImportError as exc:
         raise RuntimeError("telethon is required when a driver sends messages with Telethon.") from exc
 
-    session_path = Path(settings.telethon_session).expanduser()
-    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session_path_obj = Path(session_path or settings.telethon_session).expanduser()
+    session_path_obj.parent.mkdir(parents=True, exist_ok=True)
     return TelegramClient(
-        str(session_path),
+        str(session_path_obj),
         settings.telethon_api_id,
         settings.telethon_api_hash,
         proxy=parse_telethon_proxy(settings.telethon_proxy_url),
