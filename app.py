@@ -14,6 +14,8 @@ from code_collector_bot.config import CodeCollectorSettings
 from code_collector_bot.main import build_application as build_code_collector_bot
 from code_router_agent.agent import CodeRouterAgent
 from code_router_agent.config import CodeRouterAgentSettings
+from message_dispatch_bot.config import MessageDispatchSettings
+from message_dispatch_bot.main import build_application as build_message_dispatch_bot
 from telegram_file_code_bot.app.logging import configure_logging
 from telegram_file_code_bot.app.main import build_application as build_file_code_bot
 from tg_msg_collector_bot.main import build_application as build_msg_collector_bot
@@ -69,6 +71,7 @@ async def main() -> None:
     backup_settings = BackupSettings.from_env()
     code_collector_bot_settings = CodeCollectorSettings.from_env()
     code_router_agent_settings = CodeRouterAgentSettings.from_env()
+    message_dispatch_settings = MessageDispatchSettings.from_env()
 
     applications: list[tuple[str, Application]] = []
     agent_instances: list[tuple[str, CodeRouterAgent]] = []
@@ -98,6 +101,11 @@ async def main() -> None:
         applications.append(("backup_bot", build_backup_bot(backup_settings)))
     else:
         LOGGER.info("backup_bot is disabled. Set BACKUP_BOT_ENABLED=true to start it.")
+
+    if message_dispatch_settings.enabled:
+        applications.append(("message_dispatch_bot", build_message_dispatch_bot(message_dispatch_settings)))
+    else:
+        LOGGER.info("message_dispatch_bot is disabled. Set MESSAGE_DISPATCH_BOT_ENABLED=true to start it.")
 
     started: list[tuple[str, Application]] = []
     started_agents: list[tuple[str, CodeRouterAgent, asyncio.Task[None]]] = []

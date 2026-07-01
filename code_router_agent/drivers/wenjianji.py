@@ -10,7 +10,7 @@ from typing import Any
 
 from code_collector_bot.models import TaskRecord
 from code_router_agent.config import CodeRouterAgentSettings
-from code_router_agent.execution import ExecutionResult, ExecutionStatus, NextAction
+from code_router_agent.execution import DriverOutputMessage, ExecutionResult, ExecutionStatus, NextAction
 from code_router_agent.telethon_client import build_telethon_client
 
 
@@ -32,6 +32,7 @@ class WenJianJiCode:
 class PageSummary:
     message_id: int
     text: str
+    full_text: str
     current_page: int | None
     total_pages: int | None
     has_next_button: bool
@@ -130,6 +131,7 @@ class WenJianJiDriver:
                     "completed": True,
                     "already_completed": True,
                 },
+                output_messages=_output_messages_from_pagination(previous_pagination, self.name),
             )
 
         should_resume = _should_resume_pagination(previous_pagination)
@@ -163,7 +165,47 @@ class WenJianJiDriver:
                 "stop_reason": pagination["stop_reason"],
                 "completed": completed,
             },
+            output_messages=_output_messages_from_pagination(pagination, self.name),
         )
+
+
+def _output_messages_from_pagination(pagination: dict[str, Any] | None, source: str) -> tuple[DriverOutputMessage, ...]:
+    if not pagination:
+        return ()
+    messages: list[DriverOutputMessage] = []
+    seen_keys: set[tuple[str, int | None]] = set()
+    pages = pagination.get("pages")
+    if not isinstance(pages, list):
+        return ()
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        message_id = _optional_int(page.get("message_id"))
+        content = str(page.get("full_text") or page.get("text") or "")
+        if not content:
+            continue
+        key = (source, message_id)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        messages.append(
+            DriverOutputMessage(
+                source=source,
+                message_id=message_id,
+                content=content,
+                raw_payload=page,
+            )
+        )
+    return tuple(messages)
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _load_previous_pagination(raw_state_payload: str) -> dict[str, Any] | None:
@@ -398,6 +440,7 @@ def _summarize_page(message) -> PageSummary:
     return PageSummary(
         message_id=int(message.id),
         text=text[:500],
+        full_text=text,
         current_page=current_page,
         total_pages=total_pages,
         has_next_button=_find_next_page_button(message) is not None,

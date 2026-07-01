@@ -14,6 +14,7 @@ from code_collector_bot.storage import TaskRepository
 from code_router_agent.channel_listener import ChannelMessageListener
 from code_router_agent.config import CodeRouterAgentSettings
 from code_router_agent.drivers import create_auto_registered_drivers
+from code_router_agent.output_storage import DriverOutputRepository
 from code_router_agent.drivers.base import Driver
 
 
@@ -26,6 +27,8 @@ class CodeRouterAgent:
         self.settings = settings
         self.repository = repository or TaskRepository(settings.database_path)
         self.repository.init()
+        self.output_repository = DriverOutputRepository(settings.database_path)
+        self.output_repository.init()
         self.drivers = create_auto_registered_drivers()
         if not self.drivers:
             raise RuntimeError("No auto-registered code router drivers are enabled.")
@@ -164,6 +167,14 @@ class CodeRouterAgent:
                 result=result.result,
                 next_action=str(result.next_action),
             )
+            saved_output_count = self.output_repository.save_messages(task.task_id, result.output_messages)
+            if saved_output_count:
+                LOGGER.info(
+                    "Task %s saved %s driver output messages from driver %s.",
+                    task.task_id,
+                    saved_output_count,
+                    driver.name,
+                )
             updated = self.repository.update_task_state(
                 task.task_id,
                 status=result.to_task_status(),

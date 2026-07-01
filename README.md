@@ -92,6 +92,15 @@ ZYXFIDS_DRIVER_DRY_RUN=true
 AMUMU_JIEMA_DRIVER_TARGET_BOT=@amumujiemabot
 AMUMU_JIEMA_DRIVER_DRY_RUN=true
 
+
+# message_dispatch_bot
+MESSAGE_DISPATCH_BOT_ENABLED=false
+MESSAGE_DISPATCH_BOT_TOKEN=123456:replace-with-your-message-dispatch-bot-token
+MESSAGE_DISPATCH_BOT_PROXY_URL=
+MESSAGE_DISPATCH_INTERVAL_SECONDS=300
+MESSAGE_DISPATCH_MAX_TASKS_PER_RUN=20
+MESSAGE_DISPATCH_ADMIN_USER_IDS=
+
 # backup_bot
 BACKUP_BOT_ENABLED=false
 BACKUP_BOT_TOKEN=123456:replace-with-your-backup-bot-token
@@ -409,6 +418,46 @@ WENJIANJI_DRIVER_DRY_RUN=true
 WENJIANJI_DRIVER_PAGE_WAIT_SECONDS=60
 WENJIANJI_DRIVER_POLL_INTERVAL_SECONDS=2
 WENJIANJI_DRIVER_MAX_PAGES=50
+```
+
+## message_dispatch_bot
+
+???
+
+- ???? `/start` ???? `message_dispatch_subscribers`???? `ACTIVE`?
+- ???? `/stop` ? `/unsubscribe` ????? `INACTIVE`?
+- ?? `MESSAGE_DISPATCH_INTERVAL_SECONDS` ??? `driver_output_tasks` ???? `NEW` ????
+- ?? `task_id` ?? `workflow_tasks.message_content` ? `driver_output_messages.content`?
+- ???? `ACTIVE` ??????????????? driver ?????
+- ?????? `driver_output_tasks.status` ?? `DONE`?????????? `NEW`?
+- ?????? bot?????????? `BLOCKED`?
+
+???
+
+```env
+MESSAGE_DISPATCH_BOT_ENABLED=true
+MESSAGE_DISPATCH_BOT_TOKEN=123456:replace-with-your-message-dispatch-bot-token
+MESSAGE_DISPATCH_INTERVAL_SECONDS=300
+MESSAGE_DISPATCH_MAX_TASKS_PER_RUN=20
+MESSAGE_DISPATCH_ADMIN_USER_IDS=
+```
+
+?????
+
+```text
+/start
+/stop
+/unsubscribe
+/status
+```
+
+????
+
+```text
+message_dispatch_subscribers
+driver_output_tasks
+driver_output_messages
+workflow_tasks
 ```
 
 ## backup_bot

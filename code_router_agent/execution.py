@@ -24,12 +24,21 @@ class NextAction(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class DriverOutputMessage:
+    source: str
+    message_id: int | None
+    content: str
+    raw_payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionResult:
     status: ExecutionStatus
     next_action: NextAction = NextAction.NONE
     delay_seconds: float = 0
     state_payload: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] = field(default_factory=dict)
+    output_messages: tuple[DriverOutputMessage, ...] = field(default_factory=tuple)
 
     def to_task_status(self) -> TaskStatus:
         if self.status == ExecutionStatus.DONE:
